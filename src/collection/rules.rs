@@ -12,8 +12,7 @@ pub struct CollectionRule {
     pub name: String,
     pub description: String,
     pub path: String,
-    pub platform: String,
-    pub recursive: bool
+    pub platform: String
 }
 
 impl CollectionRule {

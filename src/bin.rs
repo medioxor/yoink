@@ -30,8 +30,9 @@ fn main() {
         Some(Commands::Collect {
             artefacts,
         }) => {
-            let mut collector = Collecter::new(env::consts::OS.to_string()).unwrap();
-            collector.collect();
+            let mut collector = Collecter::new(env::consts::OS.to_string(), Some("asdf".to_string())).unwrap();
+            collector.collect_all();
+            collector.compress_collection("output_file.zip");
 
         }
         None => println!("Unsupported!")
