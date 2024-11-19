@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::env;
 use yoink::collection::collecter::Collecter;
+use yoink::collection::reader::read_file;
 
 use std::io::Write;
 use std::{path::Path, fs::File};
@@ -31,8 +32,9 @@ fn main() {
             artefacts,
         }) => {
             let mut collector = Collecter::new(env::consts::OS.to_string(), Some("asdf".to_string())).unwrap();
-            collector.collect_all();
-            collector.compress_collection("output_file.zip");
+            collector.collect_all().unwrap();
+            collector.compress_collection("output_file.zip").unwrap();
+            //read_file(Path::new("C:\\$MFT")).unwrap();
 
         }
         None => println!("Unsupported!")

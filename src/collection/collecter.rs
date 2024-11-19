@@ -1,4 +1,5 @@
 mod rules;
+
 use chrono::{DateTime, Local};
 use rules::CollectionRule;
 use std::io::Write;
@@ -9,6 +10,8 @@ use glob::glob;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
+mod reader_windows;
+use reader_windows::read_file;
 
 pub struct Collecter {
     rules: Vec<CollectionRule>,
@@ -90,23 +93,35 @@ impl Collecter {
     }
 
     pub fn compress_collection(&self, output_file: &str) -> Result<(), Box<dyn Error>> {
-        let file = File::create(output_file)?;
-        let mut zip = ZipWriter::new(file);
-        
+        let zip_file = File::create(output_file)?;
+        let mut zip = ZipWriter::new(zip_file);
+
         for file in &self.files {
+            #[cfg(target_os = "linux")]
             let last_modify_time = File::open(&file)?.metadata()?.modified()?;
+            #[cfg(target_os = "linux")]
             let last_modify_time = DateTime::<Local>::from(last_modify_time).naive_utc();
+            #[cfg(target_os = "linux")]
+            let file_contents = std::fs::read(file)?;
+            #[cfg(target_os = "windows")]
+            let (file_contents, last_modify_time) = read_file(std::path::Path::new(file))?;
+
             if self.encryption_key.is_some() {
                 // unwrap safe because we already checked if some
                 let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modify_time.try_into()?).with_aes_encryption(Aes256, self.encryption_key.as_deref().unwrap());
+                #[cfg(target_os = "windows")]
+                zip.start_file_from_path(file.replace(":", ""), options)?;
+                #[cfg(target_os = "linux")]
                 zip.start_file_from_path(file, options)?;
             }
             else {
                 let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modify_time.try_into()?);
+                #[cfg(target_os = "windows")]
+                zip.start_file_from_path(file.replace(":", ""), options)?;
+                #[cfg(target_os = "linux")]
                 zip.start_file_from_path(file, options)?;
             }
-            
-            let file_contents = std::fs::read(file)?;
+
             zip.write_all(&file_contents)?;
         }
         
