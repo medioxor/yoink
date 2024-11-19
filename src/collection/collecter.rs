@@ -10,8 +10,11 @@ use glob::glob;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
+#[cfg(target_os = "windows")]
 mod reader_windows;
+#[cfg(target_os = "windows")]
 use reader_windows::read_file;
+use std::fs;
 
 pub struct Collecter {
     rules: Vec<CollectionRule>,
@@ -30,6 +33,7 @@ impl Collecter {
 
     fn search_filesystem(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
         let mut files = Vec::new();
+        println!("Searching path: {}", path);
         glob(path)?.for_each(|entry| {
             match entry {
                 Ok(path) => {
@@ -52,8 +56,21 @@ impl Collecter {
 
     #[cfg(target_os = "linux")]
     pub fn collect_by_rule(rule: &CollectionRule) -> Result<Vec<String>, Box<dyn Error>> {
-        files.append(&mut Collecter::search_filesystem(rule.path.as_str())?);
-        Ok(files)
+        let mut files: Vec<String> = Vec::new();
+        let ignored = vec!["/proc", "/dev", "/sys"];
+        if rule.path.starts_with("**") {
+            for entry in fs::read_dir("/")? {
+                let path = entry?.path();
+                if path.is_dir() && !ignored.contains(&path.to_str().ok_or("invalid path")?) {
+                    let search_path = format!("{}/{}", path.display(), rule.path);
+                    files.append(&mut Collecter::search_filesystem(&search_path)?);
+                }
+            }
+            return Ok(files)
+        }
+        else {
+            Ok(Collecter::search_filesystem(rule.path.as_str())?)
+        }
     }
 
     #[cfg(target_os = "windows")]
