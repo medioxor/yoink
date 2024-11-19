@@ -1,6 +1,6 @@
 mod rules;
 
-use chrono::{DateTime, Local};
+use std::env;
 use rules::CollectionRule;
 use std::io::Write;
 use std::{error::Error, fs::File};
@@ -14,6 +14,7 @@ use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
 mod reader_windows;
 #[cfg(target_os = "windows")]
 use reader_windows::read_file;
+#[cfg(target_os = "linux")]
 use std::fs;
 
 pub struct Collecter {
@@ -29,6 +30,18 @@ impl Collecter {
             encryption_key: encryption_key,
             files: Vec::new()
         })
+    }
+
+    pub fn add_rule_from_file(&mut self, file_path: &str) -> Result<(), Box<dyn Error>> {
+        let new_rule = CollectionRule::from_yaml_file(file_path)?;
+        if self.rules.iter().any(|rule| rule.name == new_rule.name) {
+            return Ok(());
+        }
+        if new_rule.platform != env::consts::OS {
+            return Ok(());
+        }
+        self.rules.push(new_rule);
+        Ok(())
     }
 
     fn search_filesystem(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
@@ -71,6 +84,13 @@ impl Collecter {
         else {
             Ok(Collecter::search_filesystem(rule.path.as_str())?)
         }
+    }
+
+    pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<(), Box<dyn Error>> {
+        let rule = self.rules.iter().find(|rule| rule.name == rule_name)
+            .ok_or_else(|| format!("Rule with name '{}' not found", rule_name))?;
+        Collecter::collect_by_rule(&rule)?;
+        Ok(())
     }
 
     #[cfg(target_os = "windows")]
