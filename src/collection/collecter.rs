@@ -1,6 +1,6 @@
+use super::rules::CollectionRule;
 use chrono::{DateTime, Local, NaiveDateTime};
 use glob::glob;
-use super::rules::CollectionRule;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::{error::Error, fs::File};
