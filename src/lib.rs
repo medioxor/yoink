@@ -1,6 +1,9 @@
 pub mod collection {
-    #[path = "rules.rs"] pub mod rules;
-    #[path = "collecter.rs"] pub mod collecter;
+    #[path = "collecter.rs"]
+    pub mod collecter;
+    #[path = "rules.rs"]
+    pub mod rules;
     #[cfg(target_os = "windows")]
-    #[path = "sector_reader.rs"] pub mod sector_reader;
+    #[path = "sector_reader.rs"]
+    pub mod sector_reader;
 }
