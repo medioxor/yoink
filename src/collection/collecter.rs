@@ -1,21 +1,30 @@
 mod rules;
 
 use std::env;
+use chrono::{DateTime, Local, NaiveDateTime};
 use rules::CollectionRule;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::{error::Error, fs::File};
 use zip::ZipWriter;
+use std::path::Path;
+use chrono::{ TimeZone, Utc};
+#[cfg(target_os = "windows")]
+use ntfs::{
+    indexes::NtfsFileNameIndex, structured_values::NtfsStandardInformation, Ntfs, NtfsAttributeType, NtfsFile
+};
 use zip::AesMode::Aes256;
 use glob::glob;
 
 #[cfg(target_os = "windows")]
+use nt_time::FileTime;
+#[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
 #[cfg(target_os = "windows")]
-mod reader_windows;
+mod sector_reader;
 #[cfg(target_os = "windows")]
-use reader_windows::read_file;
-#[cfg(target_os = "linux")]
-use std::fs;
+use sector_reader::SectorReader;
+use std::io;
+use ntfs::NtfsReadSeek;
 
 pub struct Collecter {
     rules: Vec<CollectionRule>,
@@ -52,7 +61,7 @@ impl Collecter {
                 Ok(path) => {
                     if path.is_file() {
                         if let Ok(file_path) = path.into_os_string().into_string() {
-                            println!("Found file: {}", file_path);
+                            println!("Found artefact: {}", file_path);
                             files.push(file_path);
                         } else {
                             println!("Failed to convert path to string");
@@ -86,11 +95,23 @@ impl Collecter {
         }
     }
 
-    pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<(), Box<dyn Error>> {
+    pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<usize, Box<dyn Error>> {
         let rule = self.rules.iter().find(|rule| rule.name == rule_name)
             .ok_or_else(|| format!("Rule with name '{}' not found", rule_name))?;
-        Collecter::collect_by_rule(&rule)?;
-        Ok(())
+        let mut collected_files = Collecter::collect_by_rule(&rule)?;
+        let collected_files_len = collected_files.len();
+        self.files.append(&mut collected_files);
+        Ok(collected_files_len)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn parse_stream(path: &str) -> (String, String) {
+        if let Some(pos) = path.rfind(':') {
+            let (left, right) = path.split_at(pos);
+            (left.to_string(), right.to_string().replace(":", ""))
+        } else {
+            (path.to_string(), String::new())
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -100,7 +121,26 @@ impl Collecter {
         for drive in drives {
             println!("Searching drive: {}", drive);
             let path = format!("{drive}{0}", rule.path);
-            files.append(&mut Collecter::search_filesystem(path.as_str())?);
+            if path.chars().filter(|&c| c == ':').count() >= 2 {
+                let (path, stream) = Collecter::parse_stream(path.as_str());
+                println!("path: {}, stream: {}", path, stream);
+                if path.contains("*") {
+                    for file in &mut Collecter::search_filesystem(path.as_str())? {
+                        files.push(format!("{}:{}", file, stream));
+                    }
+                }
+                else {
+                    files.push(format!("{}:{}", path, stream));
+                }
+            }
+            else {
+                if path.contains("*") {
+                    files.append(&mut Collecter::search_filesystem(path.as_str())?);
+                }
+                else {
+                    files.push(path);
+                }
+            }
         }
         Ok(files)
     }
@@ -124,42 +164,198 @@ impl Collecter {
 
     pub fn collect_all(&mut self) -> Result<(), Box<dyn Error>> {
         for rule in &self.rules {
-            self.files.append(&mut Collecter::collect_by_rule(rule)?);
+            match Collecter::collect_by_rule(rule) {
+                Ok(mut files) => {
+                    println!("Collected artefacts for rule: {}", rule.name);
+                    self.files.append(&mut files);
+                },
+                Err(e) => println!("Failed to collect artefacts for rule: {}\n{}", rule.name, e)
+            }
         }
         Ok(())
     }
 
-    pub fn compress_collection(&self, output_file: &str) -> Result<(), Box<dyn Error>> {
-        let zip_file = File::create(output_file)?;
-        let mut zip = ZipWriter::new(zip_file);
+    #[cfg(target_os = "windows")]
+    pub fn compress_file_raw(zip: &mut ZipWriter<File>, file_path: String, encryption_key: Option<String>) -> Result<(), Box<dyn Error>> {
+        let path: String;
+        let stream_name: String;
 
-        for file in &self.files {
-            #[cfg(target_os = "linux")]
-            let last_modify_time = File::open(&file)?.metadata()?.modified()?;
-            #[cfg(target_os = "linux")]
-            let last_modify_time = DateTime::<Local>::from(last_modify_time).naive_utc();
-            #[cfg(target_os = "linux")]
-            let file_contents = std::fs::read(file)?;
+        if file_path.chars().filter(|&c| c == ':').count() >= 2 {
+            (path, stream_name) = Collecter::parse_stream(file_path.as_str());
+            
+        }
+        else {
+            path = file_path;
+            stream_name = String::new();
+        }
+
+        let volume_path = format!(
+            "\\\\.\\{}:",
+            path.chars().next().ok_or("Invalid path")?
+        );
+
+        let volume = File::open(Path::new(&volume_path))?;
+        let sector_reader = SectorReader::new(volume, 4096)?;
+        let mut filesystem_reader = BufReader::new(sector_reader);
+        let mut ntfs = Ntfs::new(&mut filesystem_reader)?;
+        ntfs.read_upcase_table(&mut filesystem_reader)?;
+        let mut current_directory: Vec<NtfsFile> = vec![ntfs.root_directory(&mut filesystem_reader)?];
+    
+        for dir in Path::new(&path).iter().skip(1) {
+            let next_dir = dir.to_str().ok_or("Invalid path")?;
+            let index = current_directory
+                .last()
+                .unwrap()
+                .directory_index(&mut filesystem_reader)?;
+            let mut finder = index.finder();
+            
+            if let Some(entry) = NtfsFileNameIndex::find(&mut finder, &ntfs, &mut filesystem_reader, next_dir) {
+                let file = entry?.to_file(&ntfs, &mut filesystem_reader)?;
+                if !file.is_directory() {
+                    let last_modified = Collecter::get_lastmodified(&file, &mut filesystem_reader)?;
+                    
+                    if encryption_key.is_some() {
+                        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modified.try_into()?).with_aes_encryption(Aes256, encryption_key.as_deref().unwrap());
+                        if stream_name.is_empty() {
+                            zip.start_file_from_path(path.replace(":", ""), options)?;
+                        }
+                        else {
+                            zip.start_file_from_path(format!("{0}_{1}", path.replace(":", ""), stream_name), options)?;
+                        }
+                    }
+                    else {
+                        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modified.try_into()?);
+                        if stream_name.is_empty() {
+                            zip.start_file_from_path(path.replace(":", ""), options)?;
+                        }
+                        else {
+                            zip.start_file_from_path(format!("{0}_{1}", path.replace(":", ""), stream_name), options)?;
+                        }
+                    }
+                    
+                    let data_item = file
+                        .data(&mut filesystem_reader, &stream_name.as_str())
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, format!("The file does not have a stream called {}", stream_name)))??;
+                    let data_attribute = data_item.to_attribute()?;
+                    let mut data_value = data_attribute.value(&mut filesystem_reader)?;
+
+                    let mut buf = [0u8; 4096];
+
+                    loop {
+                        let bytes_read = data_value.read(&mut filesystem_reader, &mut buf)?;
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        match zip.write_all(buf.as_ref()) {
+                            Ok(_) => continue,
+                            Err(_e) => break
+                        }
+                    }
+    
+                    return Ok(());
+                } else {
+                    current_directory.push(file);
+                }
+            }
+        }
+    
+        Err(Box::new(io::Error::new(io::ErrorKind::Other, "File not found or is a directory")))
+    }
+    
+    #[cfg(target_os = "windows")]
+    fn get_lastmodified(
+        file: &NtfsFile,
+        filesystem_reader: &mut BufReader<SectorReader<File>>
+    ) -> Result<NaiveDateTime, Box<dyn Error>> {
+        use std::io;
+
+    
+        let mut attributes = file.attributes();
+        while let Some(attribute_item) = attributes.next(filesystem_reader) {
+            let attribute_item = attribute_item?;
+            let attribute = attribute_item.to_attribute()?;
+    
+            if let Ok(NtfsAttributeType::StandardInformation) = attribute.ty() {
+                let std_info = attribute.resident_structured_value::<NtfsStandardInformation>()?;
+                let file_time = FileTime::from(std_info.mft_record_modification_time().nt_timestamp()).to_unix_time_secs();
+                let modified_timestamp = Utc.timestamp_opt(file_time, 0).single().ok_or("Invalid timestamp")?;
+                return Ok(modified_timestamp.naive_utc());
+            }
+        }
+    
+        Err(Box::new(io::Error::new(io::ErrorKind::Other, "StandardInformation attribute not found")))
+    }
+
+    fn compress_file(reader: &mut BufReader<File>, zip: &mut ZipWriter<File>, file_path: String, last_modified: NaiveDateTime, encryption_key: Option<String>) -> Result<(), Box<dyn Error>> {
+        if encryption_key.is_some() {
+            let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modified.try_into()?).with_aes_encryption(Aes256, encryption_key.as_deref().unwrap());
             #[cfg(target_os = "windows")]
-            let (file_contents, last_modify_time) = read_file(std::path::Path::new(file))?;
+            zip.start_file_from_path(file_path.replace(":", ""), options)?;
+            #[cfg(target_os = "linux")]
+            zip.start_file_from_path(file_path, options)?;
+        }
+        else {
+            let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modified.try_into()?);
+            #[cfg(target_os = "windows")]
+            zip.start_file_from_path(file_path.replace(":", ""), options)?;
+            #[cfg(target_os = "linux")]
+            zip.start_file_from_path(file_path, options)?;
+        }
 
-            if self.encryption_key.is_some() {
-                // unwrap safe because we already checked if some
-                let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modify_time.try_into()?).with_aes_encryption(Aes256, self.encryption_key.as_deref().unwrap());
+        loop {
+            let length = {
+                let buffer = reader.fill_buf()?;
+                zip.write(&buffer)?;
+                buffer.len()
+            };
+            if length == 0 {
+                break;
+            }
+            reader.consume(length);
+        }
+
+        Ok(())
+    }
+
+    pub fn compress_collection(&mut self, output_file: &str) -> Result<(), Box<dyn Error>> {
+        let zip_file = File::create(output_file)?;
+        let mut zip: ZipWriter<File> = ZipWriter::new(zip_file);
+
+        if self.files.is_empty() {
+            return Err("No artefacts to compress".into());
+        }
+
+        // remove duplicate files
+        let mut unique_files = std::collections::HashSet::new();
+        self.files.retain(|file| unique_files.insert(file.clone()));
+
+        for file_path in &self.files {
+            let file = match File::options().read(true).write(false).open(file_path) {
+                Ok(file) => Some(file),
+                Err(_) => {
+                    None
+                }
+            };
+
+            if file.is_none() {
                 #[cfg(target_os = "windows")]
-                zip.start_file_from_path(file.replace(":", ""), options)?;
+                match Collecter::compress_file_raw(&mut zip, file_path.to_string(), self.encryption_key.clone()) {
+                    Ok(_) => continue,
+                    Err(e) => {
+                        println!("Failed to compress file: {}, {}", file_path, e);
+                        continue;
+                    }
+                }
                 #[cfg(target_os = "linux")]
-                zip.start_file_from_path(file, options)?;
+                continue;
             }
             else {
-                let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::BZIP2).last_modified_time(last_modify_time.try_into()?);
-                #[cfg(target_os = "windows")]
-                zip.start_file_from_path(file.replace(":", ""), options)?;
-                #[cfg(target_os = "linux")]
-                zip.start_file_from_path(file, options)?;
+                let file = file.unwrap();
+                let last_modify_time = file.metadata()?.modified()?;
+                let mut reader = BufReader::new(file);
+                let last_modify_time = DateTime::<Local>::from(last_modify_time).naive_utc();
+                Collecter::compress_file(&mut reader, &mut zip, file_path.clone(), last_modify_time, self.encryption_key.clone())?;
             }
-
-            zip.write_all(&file_contents)?;
         }
         
         zip.finish()?;

@@ -1,4 +1,4 @@
-name: MFT
+name: mft
 description: Collects the Master File Table (MFT) from any NTFS file systems.
-path: $MFT
+path: "$MFT"
 platform: windows

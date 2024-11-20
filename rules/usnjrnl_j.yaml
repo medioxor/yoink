@@ -1,0 +1,4 @@
+name: usnjrnl_j
+description: Collects the $J stream from the USN Journal.
+path: "$Extend\\$UsnJrnl:$J"
+platform: windows

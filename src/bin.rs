@@ -4,6 +4,11 @@ use std::env;
 use yoink::collection::collecter::Collecter;
 use glob::glob;
 
+#[cfg(target_os = "windows")]
+const HOSTNAME_ENV: &str = "COMPUTERNAME";
+#[cfg(target_os = "linux")]
+const HOSTNAME_ENV: &str = "HOSTNAME";
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -14,6 +19,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// collect forensic artefacts based on .yaml rules
     Collect {
         #[clap(short, long, default_value_t = false)]
         /// list the rules that can be used for collection
@@ -27,6 +33,9 @@ enum Commands {
         #[clap(short, long, default_value_t = String::from(""))]
         /// encrypt the collection with a password using AES256
         encryption_key: String,
+        #[clap(short, long, default_value_t = format!("{0}_{1}", env::var(HOSTNAME_ENV).unwrap_or("localhost".to_string()), chrono::Utc::now().timestamp_millis()))]
+        /// path the to the output file, must end in .zip e.g. /path/to/output.zip
+        output: String,
         /// the name of the rules to use for collection
         rules: Vec<String>
     }
@@ -34,13 +43,14 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
-
+    
     match &cli.command {
         Some(Commands::Collect {
             list,
             rule_dir,
             all,
             encryption_key,
+            output,
             rules,
         }) => {
             if *list {
@@ -99,14 +109,30 @@ fn main() {
             
             if *all {
                 collector.collect_all().expect("Failed to collect artefacts");
+
+                match collector.compress_collection(&output) {
+                    Ok(_) => println!("Collection compressed to {}", output),
+                    Err(e) => println!("{}", e)
+                }
+                return;
+            }
+
+            if rules.is_empty() {
+                println!("No rules specified, use -l to list available rules");
                 return;
             }
 
             for rule in rules {
-                collector.collect_by_rulename(rule).expect("Failed to collect artefacts");
+                match collector.collect_by_rulename(rule) {
+                    Ok(number_of_artefacts) => println!("Found {} artefacts to collect for rule: {}", number_of_artefacts, rule),
+                    Err(e) => println!("{}", e)
+                }
             }
 
-            collector.compress_collection("collection.zip").unwrap();
+            match collector.compress_collection(&output) {
+                Ok(_) => println!("Collection compressed to {}", output),
+                Err(e) => println!("{}", e)
+            }
 
         }
         None => println!("Unsupported!")
