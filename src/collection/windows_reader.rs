@@ -140,8 +140,7 @@ fn open_file<'f>(
             .directory_index(filesystem_reader)?;
         let mut finder = index.finder();
 
-        if let Some(entry) =
-            NtfsFileNameIndex::find(&mut finder, ntfs, filesystem_reader, next_dir)
+        if let Some(entry) = NtfsFileNameIndex::find(&mut finder, ntfs, filesystem_reader, next_dir)
         {
             let file = entry?.to_file(ntfs, filesystem_reader)?;
             if !file.is_directory() {
@@ -168,9 +167,8 @@ pub fn get_lastmodified(file_path: String) -> Result<NaiveDateTime, Box<dyn Erro
 
         if let Ok(NtfsAttributeType::StandardInformation) = attribute.ty() {
             let std_info = attribute.resident_structured_value::<NtfsStandardInformation>()?;
-            let file_time =
-                FileTime::from(std_info.mft_record_modification_time().nt_timestamp())
-                    .to_unix_time_secs();
+            let file_time = FileTime::from(std_info.mft_record_modification_time().nt_timestamp())
+                .to_unix_time_secs();
             let modified_timestamp = Utc
                 .timestamp_opt(file_time, 0)
                 .single()

@@ -8,10 +8,15 @@ use zip::{
     CompressionMethod, ZipWriter,
 };
 
-#[cfg(target_os = "windows")]
-use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
+#[cfg(target_os = "linux")]
+use chrono::{DateTime, Local};
+#[cfg(target_os = "linux")]
+use std::io::{BufRead, BufReader, Write};
+
 #[cfg(target_os = "windows")]
 use super::windows_reader::{copy_file, get_lastmodified, parse_stream};
+#[cfg(target_os = "windows")]
+use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
 
 pub struct Collecter {
     rules: Vec<CollectionRule>,
@@ -165,6 +170,7 @@ impl Collecter {
         }
     }
 
+    #[cfg(target_os = "windows")]
     fn compress_file(
         &mut self,
         zip: &mut ZipWriter<File>,
@@ -191,7 +197,11 @@ impl Collecter {
     }
 
     #[cfg(target_os = "linux")]
-    fn compress_file(zip: &mut ZipWriter<File>, file_path: String) -> Result<(), Box<dyn Error>> {
+    fn compress_file(
+        &mut self,
+        zip: &mut ZipWriter<File>,
+        file_path: String,
+    ) -> Result<(), Box<dyn Error>> {
         println!("Compressing file: {}", file_path);
 
         let file = File::options()
@@ -201,7 +211,7 @@ impl Collecter {
         let last_modified = file.metadata()?.modified()?;
         let mut reader = BufReader::new(file);
         let last_modified = DateTime::<Local>::from(last_modified).naive_utc();
-        let options = Collecter::get_zip_options(last_modified)?;
+        let options = self.get_zip_options(last_modified)?;
 
         zip.start_file_from_path(file_path, options)?;
 
