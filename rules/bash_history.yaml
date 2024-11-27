@@ -1,4 +1,5 @@
 name: bash_history
 description: Collects the bash history file for each user on the system which contains commands ran by the user.
+platform: windows
+rule_type: file
 path: "**/.bash_history"
-platform: linux

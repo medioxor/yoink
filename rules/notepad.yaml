@@ -1,0 +1,5 @@
+name: notepad
+description: Collects memory dump for every notepad.exe process.
+platform: windows
+rule_type: memory
+process_name: notepad.exe
