@@ -44,7 +44,6 @@ pub enum CollectionRule {
 
 impl CollectionRule {
     pub fn from_yaml_string(yaml: &str) -> Result<Self, Box<dyn Error>> {
-        println!("Parsing YAMLs: {}", yaml);
         if let Ok(rule) = serde_yaml::from_str::<MemoryRule>(yaml) {
             return Ok(CollectionRule::MemoryRule(rule));
         }

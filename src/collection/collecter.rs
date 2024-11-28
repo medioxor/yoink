@@ -150,9 +150,6 @@ impl Collecter {
     }
 
     pub fn compress_collection(&mut self, output_file: &str) -> Result<(), Box<dyn Error>> {
-        let zip_file = File::create(output_file)?;
-        let mut zip: ZipWriter<File> = ZipWriter::new(zip_file);
-
         self.artefacts.append(&mut self.file.files);
 
         // remove any duplicates
@@ -160,6 +157,13 @@ impl Collecter {
         self.artefacts
             .retain(|artefact| unique_artefacts.insert(artefact.clone()));
         let unique_artefacts = self.artefacts.clone();
+
+        if unique_artefacts.is_empty() {
+            return Err("No artefacts to compress".into());
+        }
+
+        let zip_file = File::create(output_file)?;
+        let mut zip: ZipWriter<File> = ZipWriter::new(zip_file);
 
         for artefact in unique_artefacts {
             match self.compress_file(&mut zip, artefact.clone()) {

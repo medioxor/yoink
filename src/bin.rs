@@ -107,6 +107,7 @@ fn main() {
                         }
                     }
                 }
+
                 return;
             }
 
@@ -161,6 +162,10 @@ fn main() {
             }
 
             for rule in rules {
+                if CollectionRule::from_name(rule).is_err() {
+                    println!("Rule {} not found", rule);
+                    continue;
+                }
                 match collector.collect_by_rulename(rule) {
                     Ok(number_of_artefacts) => println!(
                         "Found {} artefacts to collect for rule: {}",
