@@ -2,7 +2,9 @@ use clap::{Parser, Subcommand};
 use glob::glob;
 use std::env;
 use yoink::collection::collecter::Collecter;
-use yoink::collection::rules::CollectionRule;
+use yoink::collection::rules::{
+    get_rule_name, get_rule_platform, get_rules_from_dir, CollectionRule,
+};
 
 #[cfg(target_os = "windows")]
 const HOSTNAME_ENV: &str = "COMPUTERNAME";
@@ -60,35 +62,50 @@ fn main() {
             if *list {
                 let mut rules =
                     CollectionRule::get_rules_by_platform(env::consts::OS).expect("No rules found");
-                println!("List of rules:");
+                println!("List of rules:\n");
                 if !rule_dir.is_empty() {
-                    glob(format!("{}/*.yaml", rule_dir).as_str())
-                        .expect("Failed to find rules")
-                        .for_each(|entry| match entry {
-                            Ok(path) => {
-                                if path.is_file() {
-                                    let rule = CollectionRule::from_yaml_file(
-                                        path.to_str().expect("Failed to convert path to string"),
-                                    )
-                                    .expect("Failed to read rule file");
-                                    if rule.platform == env::consts::OS
-                                        && !rules.iter().any(|r| r.name == rule.name)
-                                    {
-                                        rules.push(rule);
-                                    }
+                    rules.append(
+                        &mut get_rules_from_dir(rule_dir.to_string())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter_map(|rule| {
+                                if get_rule_platform(&rule) == env::consts::OS
+                                    && !rules
+                                        .iter()
+                                        .any(|r| get_rule_name(&rule) == get_rule_name(r))
+                                {
+                                    Some(rule)
+                                } else {
+                                    None
                                 }
-                            }
-                            Err(e) => {
-                                println!("Error: {}", e);
-                            }
-                        });
+                            })
+                            .collect(),
+                    );
                 }
 
                 for rule in rules {
-                    println!("Name: {}", rule.name);
-                    println!("Description: {}", rule.description);
-                    println!("Path: {}", rule.path);
-                    println!();
+                    match &rule {
+                        CollectionRule::FileRule(r) => {
+                            println!("Rule: {}", r.name);
+                            println!("Description: {}", r.description);
+                            println!("Type: {}", r.rule_type);
+                            println!("Path: {}\n", r.path);
+                        }
+                        CollectionRule::CommandRule(r) => {
+                            println!("Rule: {}", r.name);
+                            println!("Description: {}", r.description);
+                            println!("Type: {}", r.rule_type);
+                            println!("Binary: {}", r.binary);
+                            println!("Arguments: {}\n", r.arguments);
+                        }
+                        CollectionRule::MemoryRule(r) => {
+                            println!("Rule: {}", r.name);
+                            println!("Description: {}", r.description);
+                            println!("Type: {}", r.rule_type);
+                            println!("PID: {}", r.pid);
+                            println!("Name: {}\n", r.name);
+                        }
+                    }
                 }
                 return;
             }
@@ -112,11 +129,12 @@ fn main() {
                     .for_each(|entry| match entry {
                         Ok(path) => {
                             if path.is_file() {
-                                collector
-                                    .add_rule_from_file(
-                                        path.to_str().expect("Failed to convert path to string"),
-                                    )
-                                    .expect("Failed to read rule file");
+                                match collector.add_rule_from_file(
+                                    path.to_str().expect("Failed to convert path to string"),
+                                ) {
+                                    Ok(_) => println!("Added rule from file: {}", path.display()),
+                                    Err(e) => println!("{}", e),
+                                }
                             }
                         }
                         Err(e) => {

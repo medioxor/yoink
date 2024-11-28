@@ -1,12 +1,6 @@
 use super::rules::CollectionRule;
-use chrono::NaiveDateTime;
 use glob::glob;
-use std::{env, error::Error, fs::File};
-use zip::{
-    write::{FileOptions, SimpleFileOptions},
-    AesMode::Aes256,
-    CompressionMethod, ZipWriter,
-};
+use std::{env, error::Error};
 
 use super::rules::FileRule;
 
@@ -16,7 +10,7 @@ use chrono::{DateTime, Local};
 use std::io::{BufRead, BufReader, Write};
 
 #[cfg(target_os = "windows")]
-use super::reader::ntfs_reader::{copy_file, get_lastmodified, parse_stream};
+use super::reader::ntfs_reader::parse_stream;
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
 
@@ -28,13 +22,16 @@ pub struct FileCollecter {
 impl FileCollecter {
     pub fn new(platform: String) -> Result<Self, Box<dyn Error>> {
         Ok(FileCollecter {
-            rules: CollectionRule::get_rules_by_platform_and_type(platform.as_str(), "file")?.into_iter().filter_map(|rule| {
-                if let CollectionRule::FileRule(rule) = rule {
-                    Some(rule)
-                } else {
-                    None
-                }
-            }).collect(),
+            rules: CollectionRule::get_rules_by_platform_and_type(platform.as_str(), "file")?
+                .into_iter()
+                .filter_map(|rule| {
+                    if let CollectionRule::FileRule(rule) = rule {
+                        Some(rule)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             files: Vec::new(),
         })
     }
@@ -44,9 +41,11 @@ impl FileCollecter {
             if rule.platform != env::consts::OS {
                 return Err("Rule platform does not match current platform".into());
             }
-            if self.rules.iter().any(|existing_rule| {
-                existing_rule.name == rule.name
-            }) {
+            if self
+                .rules
+                .iter()
+                .any(|existing_rule| existing_rule.name == rule.name)
+            {
                 return Err("Rule with this name already exists".into());
             }
             self.rules.push(rule);
@@ -116,7 +115,6 @@ impl FileCollecter {
             let path = format!("{drive}{0}", rule.path);
             if path.chars().filter(|&c| c == ':').count() >= 2 {
                 let (path, stream) = parse_stream(path.as_str());
-                println!("path: {}, stream: {}", path, stream);
                 if path.contains("*") {
                     for file in &mut FileCollecter::search_filesystem(path.as_str())? {
                         files.push(format!("{}:{}", file, stream));
@@ -154,7 +152,11 @@ impl FileCollecter {
         for rule in &self.rules {
             match FileCollecter::collect_by_rule(rule) {
                 Ok(mut files) => {
-                    println!("Collected {0} artefacts for rule: {1}", self.files.len(), rule.name);
+                    println!(
+                        "Collected {0} artefacts for rule: {1}",
+                        self.files.len(),
+                        rule.name
+                    );
                     self.files.append(&mut files);
                 }
                 Err(e) => println!("Failed to collect artefacts for rule: {}\n{}", rule.name, e),

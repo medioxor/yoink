@@ -17,6 +17,7 @@ use super::reader::ntfs_reader::{copy_file, get_lastmodified, parse_stream};
 
 pub struct Collecter {
     encryption_key: Option<String>,
+    artefacts: Vec<String>,
     file: FileCollecter,
 }
 
@@ -24,14 +25,15 @@ impl Collecter {
     pub fn new(platform: String, encryption_key: Option<String>) -> Result<Self, Box<dyn Error>> {
         Ok(Collecter {
             encryption_key,
+            artefacts: Vec::new(),
             file: FileCollecter::new(platform)?,
         })
     }
 
     pub fn add_rule_from_file(&mut self, file_path: &str) -> Result<(), Box<dyn Error>> {
         let new_rule = CollectionRule::from_yaml_file(file_path)?;
-        
-        if let Ok(_) = self.file.add_rule(new_rule) {
+
+        if self.file.add_rule(new_rule).is_ok() {
             return Ok(());
         }
 
@@ -56,16 +58,16 @@ impl Collecter {
         }
     }
 
-    pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<(), Box<dyn Error>> {
-        if let Ok(_) = self.file.collect_by_rulename(rule_name) {
-            return Ok(())
+    pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<usize, Box<dyn Error>> {
+        if let Ok(collected) = self.file.collect_by_rulename(rule_name) {
+            return Ok(collected);
         }
         Err("Failed to collect artefacts for rule".into())
     }
 
     pub fn collect_all(&mut self) -> Result<(), Box<dyn Error>> {
         self.file.collect_all()?;
-        
+
         Ok(())
     }
 
@@ -144,6 +146,35 @@ impl Collecter {
             reader.consume(length);
         }
 
+        Ok(())
+    }
+
+    pub fn compress_collection(&mut self, output_file: &str) -> Result<(), Box<dyn Error>> {
+        let zip_file = File::create(output_file)?;
+        let mut zip: ZipWriter<File> = ZipWriter::new(zip_file);
+
+        self.artefacts.append(&mut self.file.files);
+
+        // remove any duplicates
+        let mut unique_artefacts = std::collections::HashSet::new();
+        self.artefacts
+            .retain(|artefact| unique_artefacts.insert(artefact.clone()));
+        let unique_artefacts = self.artefacts.clone();
+
+        for artefact in unique_artefacts {
+            match self.compress_file(&mut zip, artefact.clone()) {
+                Ok(_) => {
+                    println!("Compressed artefact: {}", artefact);
+                    continue;
+                }
+                Err(e) => {
+                    println!("Failed to compress artefact: {}, {}", artefact, e);
+                    continue;
+                }
+            }
+        }
+
+        zip.finish()?;
         Ok(())
     }
 }

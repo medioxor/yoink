@@ -1,3 +1,4 @@
+use glob::glob;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -43,6 +44,7 @@ pub enum CollectionRule {
 
 impl CollectionRule {
     pub fn from_yaml_string(yaml: &str) -> Result<Self, Box<dyn Error>> {
+        println!("Parsing YAMLs: {}", yaml);
         if let Ok(rule) = serde_yaml::from_str::<MemoryRule>(yaml) {
             return Ok(CollectionRule::MemoryRule(rule));
         }
@@ -84,7 +86,9 @@ impl CollectionRule {
         Ok(CollectionRule::get_all()?
             .into_iter()
             .filter(|rule| match rule {
-                CollectionRule::CommandRule(r) => r.platform == platform && r.rule_type == rule_type,
+                CollectionRule::CommandRule(r) => {
+                    r.platform == platform && r.rule_type == rule_type
+                }
                 CollectionRule::FileRule(r) => r.platform == platform && r.rule_type == rule_type,
                 CollectionRule::MemoryRule(r) => r.platform == platform && r.rule_type == rule_type,
             })
@@ -112,4 +116,43 @@ impl CollectionRule {
         }
         Ok(rules)
     }
+}
+
+pub fn get_rule_name(rule: &CollectionRule) -> String {
+    match rule {
+        CollectionRule::CommandRule(r) => r.name.clone(),
+        CollectionRule::FileRule(r) => r.name.clone(),
+        CollectionRule::MemoryRule(r) => r.name.clone(),
+    }
+}
+
+pub fn get_rule_platform(rule: &CollectionRule) -> String {
+    match rule {
+        CollectionRule::CommandRule(r) => r.platform.clone(),
+        CollectionRule::FileRule(r) => r.platform.clone(),
+        CollectionRule::MemoryRule(r) => r.platform.clone(),
+    }
+}
+
+pub fn get_rules_from_dir(path: String) -> Result<Vec<CollectionRule>, Box<dyn Error>> {
+    let mut rules: Vec<CollectionRule> = Vec::new();
+
+    glob(format!("{}/*.yaml", path).as_str())
+        .expect("Failed to find rules")
+        .for_each(|entry| match entry {
+            Ok(path) => {
+                if path.is_file() {
+                    let rule = CollectionRule::from_yaml_file(
+                        path.to_str().expect("Failed to convert path to string"),
+                    )
+                    .expect("Failed to read rule file");
+
+                    rules.push(rule);
+                }
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+            }
+        });
+    Ok(rules)
 }
