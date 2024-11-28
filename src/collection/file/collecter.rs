@@ -4,11 +4,6 @@ use std::{env, error::Error};
 
 use super::rules::FileRule;
 
-#[cfg(target_os = "linux")]
-use chrono::{DateTime, Local};
-#[cfg(target_os = "linux")]
-use std::io::{BufRead, BufReader, Write};
-
 #[cfg(target_os = "windows")]
 use super::reader::ntfs_reader::parse_stream;
 #[cfg(target_os = "windows")]

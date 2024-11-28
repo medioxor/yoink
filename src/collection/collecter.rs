@@ -40,24 +40,6 @@ impl Collecter {
         Err("Failed to add rule".into())
     }
 
-    #[cfg(target_os = "linux")]
-    pub fn collect_by_rule(rule: &CollectionRule) -> Result<Vec<String>, Box<dyn Error>> {
-        let mut files: Vec<String> = Vec::new();
-        let ignored = ["/proc", "/dev", "/sys"];
-        if rule.path.starts_with("**") {
-            for entry in std::fs::read_dir("/")? {
-                let path = entry?.path();
-                if path.is_dir() && !ignored.contains(&path.to_str().ok_or("invalid path")?) {
-                    let search_path = format!("{}/{}", path.display(), rule.path);
-                    files.append(&mut Collecter::search_filesystem(&search_path)?);
-                }
-            }
-            Ok(files)
-        } else {
-            Ok(Collecter::search_filesystem(rule.path.as_str())?)
-        }
-    }
-
     pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<usize, Box<dyn Error>> {
         if let Ok(collected) = self.file.collect_by_rulename(rule_name) {
             return Ok(collected);
