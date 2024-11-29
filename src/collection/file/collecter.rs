@@ -5,7 +5,7 @@ use std::{env, error::Error};
 use super::rules::FileRule;
 
 #[cfg(target_os = "windows")]
-use super::reader::ntfs_reader::parse_stream;
+use super::readers::ntfs_reader::parse_stream;
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
 
@@ -147,12 +147,12 @@ impl FileCollecter {
         for rule in &self.rules {
             match FileCollecter::collect_by_rule(rule) {
                 Ok(mut files) => {
+                    self.files.append(&mut files);
                     println!(
                         "Collected {0} artefacts for rule: {1}",
                         self.files.len(),
                         rule.name
                     );
-                    self.files.append(&mut files);
                 }
                 Err(e) => println!("Failed to collect artefacts for rule: {}\n{}", rule.name, e),
             }

@@ -7,7 +7,7 @@ use std::error::Error;
 #[folder = "rules/"]
 struct RuleFile;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct MemoryRule {
     pub name: String,
     pub description: String,
@@ -17,7 +17,7 @@ pub struct MemoryRule {
     pub pid: u32,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct FileRule {
     pub name: String,
     pub description: String,
@@ -26,7 +26,7 @@ pub struct FileRule {
     pub path: String,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct CommandRule {
     pub name: String,
     pub description: String,
@@ -36,6 +36,7 @@ pub struct CommandRule {
     pub arguments: String,
 }
 
+#[derive(Clone)]
 pub enum CollectionRule {
     CommandRule(CommandRule),
     FileRule(FileRule),
