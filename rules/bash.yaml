@@ -1,0 +1,8 @@
+name: bash
+description: Collects memory dump for every bash process.
+platform: linux
+rule_type: memory
+process_names: [
+  ".*bash.*"
+]
+pids: []

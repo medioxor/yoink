@@ -5,4 +5,4 @@ rule_type: file
 paths: [
   ".bash_history"
 ]
-recursion_depth: 10
+recursion_depth: 5

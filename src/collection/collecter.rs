@@ -182,11 +182,12 @@ impl Collecter {
 
         let zip_file = File::create(output_file)?;
         let mut zip: ZipWriter<File> = ZipWriter::new(zip_file);
-
+        let mut processed = 0;
         for artefact in unique_artefacts {
             match self.compress_file(&mut zip, artefact.clone()) {
                 Ok(_) => {
                     println!("Compressed artefact: {}", artefact);
+                    processed += 1;
                     continue;
                 }
                 Err(e) => {
@@ -195,8 +196,10 @@ impl Collecter {
                 }
             }
         }
-
         zip.finish()?;
+        if processed == 0 {
+            std::fs::remove_file(output_file)?;
+        }
         Ok(())
     }
 }

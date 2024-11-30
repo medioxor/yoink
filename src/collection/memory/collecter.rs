@@ -1,13 +1,18 @@
 use super::rules::CollectionRule;
 use super::rules::MemoryRule;
+use minidump_writer::minidump_writer::MinidumpWriter;
 use regex::Regex;
 use std::{env, error::Error};
 
 #[cfg(target_os = "windows")]
 use minidump_writer::minidump_writer::MinidumpWriter;
+#[cfg(target_os = "windows")]
 use minidump_writer::MinidumpType;
+#[cfg(target_os = "windows")]
 use windows::Win32::System::ProcessStatus::EnumProcesses;
+#[cfg(target_os = "windows")]
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameA;
+#[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 
 pub struct MemoryCollecter {
@@ -69,11 +74,6 @@ impl MemoryCollecter {
             return Err("Only file rules can be added".into());
         }
         Ok(())
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn collect_by_rule(rule: &MemoryRule) -> Result<Vec<String>, Box<dyn Error>> {
-        todo!()
     }
 
     pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<usize, Box<dyn Error>> {
@@ -179,6 +179,63 @@ impl MemoryCollecter {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn get_processes() -> Result<Vec<Process>, Box<dyn Error>> {
+        let mut processes = Vec::new();
+        let proc_dir = std::fs::read_dir("/proc")?;
+
+        for entry in proc_dir {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+
+            // Only process numeric directory names (PIDs)
+            if let Ok(pid) = file_name_str.parse::<u32>() {
+                if let Ok(cmdline) = std::fs::read_to_string(format!("/proc/{}/cmdline", pid)) {
+                    let name = cmdline
+                        .split('\0')
+                        .next()
+                        .unwrap_or("")
+                        .split('/')
+                        .last()
+                        .unwrap_or("")
+                        .to_string();
+
+                    if !name.is_empty() {
+                        processes.push(Process { name, pid });
+                    }
+                }
+            }
+        }
+
+        Ok(processes)
+    }
+
+    pub fn dump_memory(process: Process) -> Result<String, Box<dyn Error>> {
+        let mut dump_writer = MinidumpWriter::new(process.pid as i32, 0);
+        let file_name = format!(
+            "{0}_{1}.dmp",
+            process.name,
+            chrono::Utc::now().timestamp_millis()
+        );
+        let mut minidump_file = std::fs::File::create(&file_name)?;
+        let mindump_file_full_path = std::fs::canonicalize(&file_name)?
+            .to_str()
+            .unwrap_or(file_name.as_str())
+            .to_string();
+        match dump_writer.dump(&mut minidump_file) {
+            Ok(_) => {
+                println!("Memory dump saved to : {0}", mindump_file_full_path);
+                Ok(mindump_file_full_path)
+            }
+            Err(e) => Err(format!(
+                "Failed to dump memory for process: {0}, {1}",
+                process.name, e
+            )
+            .into()),
+        }
+    }
+
     pub fn collect_by_rule(rule: &MemoryRule) -> Result<Vec<String>, Box<dyn Error>> {
         let mut memory_dumps = Vec::new();
         let processes = MemoryCollecter::get_processes()?;
@@ -187,11 +244,17 @@ impl MemoryCollecter {
             for process_name in rule.process_names.clone() {
                 if let Ok(regex) = Regex::new(&process_name) {
                     if regex.is_match(&process.name.to_ascii_lowercase()) {
-                        memory_dumps.push(MemoryCollecter::dump_memory(process.clone())?);
+                        match MemoryCollecter::dump_memory(process.clone()) {
+                            Ok(memory_dump) => memory_dumps.push(memory_dump),
+                            Err(e) => println!("{e}"),
+                        }
                         continue;
                     }
                 } else if process.name.to_ascii_lowercase() == process_name.to_ascii_lowercase() {
-                    memory_dumps.push(MemoryCollecter::dump_memory(process.clone())?);
+                    match MemoryCollecter::dump_memory(process.clone()) {
+                        Ok(memory_dump) => memory_dumps.push(memory_dump),
+                        Err(e) => println!("{e}"),
+                    }
                     continue;
                 }
             }

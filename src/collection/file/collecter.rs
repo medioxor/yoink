@@ -91,7 +91,7 @@ impl FileCollecter {
                         for pattern in patterns.iter() {
                             #[cfg(target_os = "windows")]
                             let (pattern, stream) = parse_stream(pattern);
-                            if let Ok(regex) = Regex::new(&pattern) {
+                            if let Ok(regex) = Regex::new(pattern) {
                                 if regex.is_match(&path) || regex.is_match(&file) {
                                     #[cfg(target_os = "windows")]
                                     tx.send(format!("{0}:{1}", path.clone(), stream))
@@ -122,19 +122,19 @@ impl FileCollecter {
     #[cfg(target_os = "linux")]
     pub fn collect_by_rule(rule: &FileRule) -> Result<Vec<String>, Box<dyn Error>> {
         let mut files: Vec<String> = Vec::new();
-        let ignored = ["/proc", "/dev", "/sys"];
-        if rule.path.starts_with("**") {
-            for entry in std::fs::read_dir("/")? {
-                let path = entry?.path();
-                if path.is_dir() && !ignored.contains(&path.to_str().ok_or("invalid path")?) {
-                    let search_path = format!("{}/{}", path.display(), rule.path);
-                    files.append(&mut FileCollecter::search_filesystem(&search_path)?);
-                }
+        for path in rule.paths.clone() {
+            if std::path::Path::new(&path).exists() {
+                files.push(path.clone());
             }
-            Ok(files)
-        } else {
-            Ok(FileCollecter::search_filesystem(rule.path.as_str())?)
+            for file in &mut FileCollecter::search_filesystem(
+                rule.recursion_depth,
+                "/".to_string(),
+                rule.paths.clone(),
+            )? {
+                files.push(file.clone());
+            }
         }
+        Ok(files)
     }
 
     pub fn collect_by_rulename(&mut self, rule_name: &str) -> Result<usize, Box<dyn Error>> {
