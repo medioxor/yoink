@@ -1,4 +1,3 @@
-use glob::glob;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -13,8 +12,8 @@ pub struct MemoryRule {
     pub description: String,
     pub platform: String,
     pub rule_type: String,
-    pub process_name: String,
-    pub pid: u32,
+    pub process_names: Vec<String>,
+    pub pids: Vec<u32>,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -23,7 +22,8 @@ pub struct FileRule {
     pub description: String,
     pub platform: String,
     pub rule_type: String,
-    pub path: String,
+    pub paths: Vec<String>,
+    pub recursion_depth: usize,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -136,23 +136,20 @@ pub fn get_rule_platform(rule: &CollectionRule) -> String {
 
 pub fn get_rules_from_dir(path: String) -> Result<Vec<CollectionRule>, Box<dyn Error>> {
     let mut rules: Vec<CollectionRule> = Vec::new();
-
-    glob(format!("{}/*.yaml", path).as_str())
-        .expect("Failed to find rules")
-        .for_each(|entry| match entry {
-            Ok(path) => {
-                if path.is_file() {
-                    let rule = CollectionRule::from_yaml_file(
-                        path.to_str().expect("Failed to convert path to string"),
-                    )
-                    .expect("Failed to read rule file");
-
-                    rules.push(rule);
+    for entry in std::fs::read_dir(&path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(extension) = path.extension() {
+                if extension == "yaml" || extension == "yml" {
+                    if let Ok(rule) = CollectionRule::from_yaml_file(
+                        path.to_str().expect("Failed to convert path to string")
+                    ) {
+                        rules.push(rule);
+                    }
                 }
             }
-            Err(e) => {
-                println!("Error: {}", e);
-            }
-        });
+        }
+    }
     Ok(rules)
 }

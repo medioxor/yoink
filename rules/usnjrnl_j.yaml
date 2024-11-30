@@ -2,4 +2,7 @@ name: usnjrnl_j
 description: Collects the $J stream from the USN Journal.
 platform: windows
 rule_type: file
-path: "$Extend\\$UsnJrnl:$J"
+paths: [
+  "$Extend\\$UsnJrnl:$J"
+]
+recursion_depth: 0

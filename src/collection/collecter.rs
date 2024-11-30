@@ -83,18 +83,22 @@ impl Collecter {
         zip: &mut ZipWriter<File>,
         file_path: String,
     ) -> Result<(), Box<dyn Error>> {
+        use std::path::Path;
+
         let (path, stream_name) = parse_stream(file_path.as_str());
+        let zip_path: String;
+
+        if self.memory.get_memory_dumps().contains(&file_path) {
+            zip_path = format!("memory/{}", Path::new(&file_path).file_name().unwrap_or_default().to_string_lossy());
+        } else if stream_name.is_empty() {
+            zip_path = path.replace(":", "");
+        } else {
+            zip_path = format!("{0}_{1}", path.replace(":", ""), stream_name);
+        }
+
         if let Ok(last_modified) = get_lastmodified(path.clone()) {
             let options = self.get_zip_options(last_modified)?;
-
-            if stream_name.is_empty() {
-                zip.start_file_from_path(path.replace(":", ""), options)?;
-            } else {
-                zip.start_file_from_path(
-                    format!("{0}_{1}", path.replace(":", ""), stream_name),
-                    options,
-                )?;
-            }
+            zip.start_file_from_path(zip_path, options)?;
             copy_file(file_path, zip)?;
         }
         else {
@@ -107,7 +111,7 @@ impl Collecter {
             let last_modified = DateTime::<Local>::from(last_modified).naive_utc();
             let options = self.get_zip_options(last_modified)?;
 
-            zip.start_file_from_path(file_path, options)?;
+            zip.start_file_from_path(zip_path, options)?;
 
             loop {
                 let length = {

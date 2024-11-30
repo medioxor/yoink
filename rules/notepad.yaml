@@ -2,5 +2,7 @@ name: notepad
 description: Collects memory dump for every notepad.exe process.
 platform: windows
 rule_type: memory
-process_name: Notepad.exe
-pid: 0
+process_names: [
+  "notepad.exe"
+]
+pids: []

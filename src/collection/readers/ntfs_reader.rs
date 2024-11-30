@@ -15,12 +15,14 @@ use std::{
 use std::{fs::File, io::BufReader};
 
 pub fn parse_stream(path: &str) -> (String, String) {
-    if path.chars().filter(|&c| c == ':').count() < 2 {
-        return (path.to_string(), String::new());
-    }
     if let Some(pos) = path.rfind(':') {
-        let (left, right) = path.split_at(pos);
-        (left.to_string(), right.to_string().replace(":", ""))
+        if pos == 1 {
+            (path.to_string(), String::new())
+        } else {
+            let (file_path, stream_name) = path.split_at(pos);
+            let stream_name = stream_name.replace(":", "");
+            (file_path.to_string(), stream_name)
+        }
     } else {
         (path.to_string(), String::new())
     }
@@ -132,7 +134,7 @@ fn open_file<'f>(
 ) -> Result<NtfsFile<'f>, Box<dyn Error>> {
     let mut current_directory: Vec<NtfsFile> = vec![ntfs.root_directory(filesystem_reader)?];
 
-    for dir in Path::new(&file_path).iter().skip(1) {
+    for dir in Path::new(&file_path).iter() {
         let next_dir = dir.to_str().ok_or("Invalid path")?;
         let index = current_directory
             .last()
@@ -152,6 +154,14 @@ fn open_file<'f>(
     }
 
     Err("File not found".into())
+}
+
+pub fn does_file_exist(drive_letter: String, file_path: String) -> Result<bool, Box<dyn Error>> {
+    let mut drive = open_drive(drive_letter.to_string())?;
+    match open_file(file_path, &mut drive.filesystem_reader, &drive.ntfs) {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
+    }
 }
 
 pub fn get_lastmodified(file_path: String) -> Result<NaiveDateTime, Box<dyn Error>> {

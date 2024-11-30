@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use glob::glob;
 use std::env;
 use yoink::collection::collecter::Collecter;
 use yoink::collection::rules::{
@@ -89,7 +88,7 @@ fn main() {
                             println!("Rule: {}", r.name);
                             println!("Description: {}", r.description);
                             println!("Type: {}", r.rule_type);
-                            println!("Path: {}\n", r.path);
+                            println!("Paths: {:?}\n", r.paths);
                         }
                         CollectionRule::CommandRule(r) => {
                             println!("Rule: {}", r.name);
@@ -102,8 +101,8 @@ fn main() {
                             println!("Rule: {}", r.name);
                             println!("Description: {}", r.description);
                             println!("Type: {}", r.rule_type);
-                            println!("PID: {}", r.pid);
-                            println!("Name: {}\n", r.name);
+                            println!("PID: {:?}", r.pids);
+                            println!("Process Names: {:?}\n", r.process_names);
                         }
                     }
                 }
@@ -125,21 +124,19 @@ fn main() {
             }
 
             if !rule_dir.is_empty() {
-                glob(format!("{}/*.yaml", rule_dir).as_str())
-                    .expect("Failed to find rules")
-                    .for_each(|entry| match entry {
-                        Ok(path) => {
-                            if path.is_file() {
-                                match collector.add_rule_from_file(
-                                    path.to_str().expect("Failed to convert path to string"),
-                                ) {
-                                    Ok(_) => println!("Added rule from file: {}", path.display()),
-                                    Err(e) => println!("{}", e),
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            println!("Error: {}", e);
+                std::fs::read_dir(rule_dir)
+                    .expect("Failed to read directory")
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| {
+                        entry.path().is_file() && 
+                        entry.path().extension().map_or(false, |ext| ext == "yaml")
+                    })
+                    .for_each(|entry| {
+                        match collector.add_rule_from_file(
+                            entry.path().to_str().expect("Failed to convert path to string"),
+                        ) {
+                            Ok(_) => println!("Added rule from file: {}", entry.path().display()),
+                            Err(e) => println!("{}", e),
                         }
                     });
             }

@@ -2,4 +2,7 @@ name: bash_history
 description: Collects the bash history file for each user on the system which contains commands ran by the user.
 platform: linux
 rule_type: file
-path: "**/.bash_history"
+paths: [
+  ".bash_history"
+]
+recursion_depth: 10
