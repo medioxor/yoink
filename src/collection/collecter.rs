@@ -1,13 +1,13 @@
 use super::{file::FileCollecter, memory::MemoryCollecter, rules::CollectionRule};
 use chrono::NaiveDateTime;
+use chrono::{DateTime, Local};
+use std::io::{BufRead, BufReader, Write};
 use std::{error::Error, fs::File};
 use zip::{
     write::{FileOptions, SimpleFileOptions},
     AesMode::Aes256,
     CompressionMethod, ZipWriter,
 };
-use chrono::{DateTime, Local};
-use std::io::{BufRead, BufReader, Write};
 
 #[cfg(target_os = "windows")]
 use super::readers::ntfs_reader::{copy_file, get_lastmodified, parse_stream};
@@ -89,7 +89,13 @@ impl Collecter {
         let zip_path: String;
 
         if self.memory.get_memory_dumps().contains(&file_path) {
-            zip_path = format!("memory/{}", Path::new(&file_path).file_name().unwrap_or_default().to_string_lossy());
+            zip_path = format!(
+                "memory/{}",
+                Path::new(&file_path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+            );
         } else if stream_name.is_empty() {
             zip_path = path.replace(":", "");
         } else {
@@ -100,8 +106,7 @@ impl Collecter {
             let options = self.get_zip_options(last_modified)?;
             zip.start_file_from_path(zip_path, options)?;
             copy_file(file_path, zip)?;
-        }
-        else {
+        } else {
             let file = File::options()
                 .read(true)
                 .write(false)
@@ -125,7 +130,6 @@ impl Collecter {
                 reader.consume(length);
             }
         }
-        
 
         Ok(())
     }

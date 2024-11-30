@@ -128,12 +128,15 @@ fn main() {
                     .expect("Failed to read directory")
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| {
-                        entry.path().is_file() && 
-                        entry.path().extension().map_or(false, |ext| ext == "yaml")
+                        entry.path().is_file()
+                            && entry.path().extension().map_or(false, |ext| ext == "yaml")
                     })
                     .for_each(|entry| {
                         match collector.add_rule_from_file(
-                            entry.path().to_str().expect("Failed to convert path to string"),
+                            entry
+                                .path()
+                                .to_str()
+                                .expect("Failed to convert path to string"),
                         ) {
                             Ok(_) => println!("Added rule from file: {}", entry.path().display()),
                             Err(e) => println!("{}", e),

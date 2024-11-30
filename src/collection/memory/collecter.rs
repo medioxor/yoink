@@ -1,14 +1,14 @@
 use super::rules::CollectionRule;
-use std::{env, error::Error};
-use regex::Regex;
 use super::rules::MemoryRule;
+use regex::Regex;
+use std::{env, error::Error};
 
 #[cfg(target_os = "windows")]
 use minidump_writer::minidump_writer::MinidumpWriter;
 use minidump_writer::MinidumpType;
 use windows::Win32::System::ProcessStatus::EnumProcesses;
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameA;
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 
 pub struct MemoryCollecter {
     rules: Vec<MemoryRule>,
@@ -99,7 +99,7 @@ impl MemoryCollecter {
                 match EnumProcesses(
                     process_ids.as_mut_ptr(),
                     (process_ids.len() * std::mem::size_of::<u32>()) as u32,
-                    &mut bytes_returned, 
+                    &mut bytes_returned,
                 ) {
                     Ok(_) => break,
                     Err(_) => {
@@ -115,14 +115,20 @@ impl MemoryCollecter {
         let num_processes = bytes_returned as usize / std::mem::size_of::<u32>();
 
         for &pid in &process_ids[0..num_processes] {
-            if pid == 0 { continue; }
+            if pid == 0 {
+                continue;
+            }
 
-            if let Ok(handle) = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid) } {
+            if let Ok(handle) =
+                unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid) }
+            {
                 let mut name = [0u8; 1024];
                 unsafe {
                     GetModuleBaseNameA(handle, None, &mut name);
                 }
-                let name = String::from_utf8_lossy(&name).trim_matches(char::from(0)).to_string();
+                let name = String::from_utf8_lossy(&name)
+                    .trim_matches(char::from(0))
+                    .to_string();
                 processes.push(Process { name, pid });
             }
         }
@@ -132,9 +138,17 @@ impl MemoryCollecter {
 
     #[cfg(target_os = "windows")]
     pub fn dump_memory(process: Process) -> Result<String, Box<dyn Error>> {
-        let file_name = format!("{0}_{1}.dmp", process.name, chrono::Utc::now().timestamp_millis());
+        let file_name = format!(
+            "{0}_{1}.dmp",
+            process.name,
+            chrono::Utc::now().timestamp_millis()
+        );
         let mut minidump_file = std::fs::File::create(&file_name)?;
-        let mindump_file_full_path = std::fs::canonicalize(&file_name)?.to_str().unwrap_or(file_name.as_str()).to_string().replace("\\\\?\\", "");
+        let mindump_file_full_path = std::fs::canonicalize(&file_name)?
+            .to_str()
+            .unwrap_or(file_name.as_str())
+            .to_string()
+            .replace("\\\\?\\", "");
 
         let crash_context = crash_context::CrashContext {
             exception_pointers: std::ptr::null(),
@@ -143,15 +157,25 @@ impl MemoryCollecter {
             exception_code: 0,
         };
 
-        let minidump_type = MinidumpType::WithFullMemory | MinidumpType::WithHandleData | MinidumpType::WithModuleHeaders | MinidumpType::WithUnloadedModules | MinidumpType::WithProcessThreadData | MinidumpType::WithFullMemoryInfo | MinidumpType::WithThreadInfo;
+        let minidump_type = MinidumpType::WithFullMemory
+            | MinidumpType::WithHandleData
+            | MinidumpType::WithModuleHeaders
+            | MinidumpType::WithUnloadedModules
+            | MinidumpType::WithProcessThreadData
+            | MinidumpType::WithFullMemoryInfo
+            | MinidumpType::WithThreadInfo;
 
-        match MinidumpWriter::dump_crash_context(crash_context, Some(minidump_type), &mut minidump_file) {
-            Ok(_) => {
-                Ok(mindump_file_full_path)
-            }
-            Err(e) => {
-                Err(format!("Failed to dump memory for process: {0}, {1}", process.name, e).into())
-            }
+        match MinidumpWriter::dump_crash_context(
+            crash_context,
+            Some(minidump_type),
+            &mut minidump_file,
+        ) {
+            Ok(_) => Ok(mindump_file_full_path),
+            Err(e) => Err(format!(
+                "Failed to dump memory for process: {0}, {1}",
+                process.name, e
+            )
+            .into()),
         }
     }
 
@@ -161,24 +185,22 @@ impl MemoryCollecter {
 
         for process in processes {
             for process_name in rule.process_names.clone() {
-                if let Ok(regex ) = Regex::new(&process_name) {
+                if let Ok(regex) = Regex::new(&process_name) {
                     if regex.is_match(&process.name.to_ascii_lowercase()) {
                         memory_dumps.push(MemoryCollecter::dump_memory(process.clone())?);
                         continue;
                     }
-                } else {
-                    if process.name.to_ascii_lowercase() == process_name.to_ascii_lowercase() {
-                        memory_dumps.push(MemoryCollecter::dump_memory(process.clone())?);
-                        continue;
-                    }
+                } else if process.name.to_ascii_lowercase() == process_name.to_ascii_lowercase() {
+                    memory_dumps.push(MemoryCollecter::dump_memory(process.clone())?);
+                    continue;
                 }
             }
-            
+
             if rule.pids.contains(&process.pid) {
                 memory_dumps.push(MemoryCollecter::dump_memory(process.clone())?);
             }
         }
-        
+
         Ok(memory_dumps)
     }
 

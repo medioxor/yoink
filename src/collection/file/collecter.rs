@@ -1,15 +1,16 @@
 use super::rules::CollectionRule;
-use std::{env, error::Error};
-use ignore::{WalkBuilder, WalkState};
-use std::{
-    cmp, sync::mpsc::{self, Sender}
-};
-use regex::Regex;
-use num_cpus;
 use super::rules::FileRule;
+use ignore::{WalkBuilder, WalkState};
+use num_cpus;
+use regex::Regex;
+use std::{
+    cmp,
+    sync::mpsc::{self, Sender},
+};
+use std::{env, error::Error};
 
 #[cfg(target_os = "windows")]
-use super::readers::ntfs_reader::{parse_stream, does_file_exist};
+use super::readers::ntfs_reader::{does_file_exist, parse_stream};
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA;
 
@@ -54,8 +55,11 @@ impl FileCollecter {
         Ok(())
     }
 
-    fn search_filesystem(depth: usize, path: String, patterns: Vec<String>) -> Result<Vec<String>, Box<dyn Error>>
-    {
+    fn search_filesystem(
+        depth: usize,
+        path: String,
+        patterns: Vec<String>,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
         let mut builder = WalkBuilder::new(path);
         let walker = builder
             .hidden(true)
@@ -78,14 +82,20 @@ impl FileCollecter {
                             return WalkState::Continue;
                         }
                         let path = entry.path().to_string_lossy().to_string();
-                        let file = entry.path().file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let file = entry
+                            .path()
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
                         for pattern in patterns.iter() {
                             #[cfg(target_os = "windows")]
-                            let (pattern, stream) = parse_stream(&pattern);
+                            let (pattern, stream) = parse_stream(pattern);
                             if let Ok(regex) = Regex::new(&pattern) {
                                 if regex.is_match(&path) || regex.is_match(&file) {
                                     #[cfg(target_os = "windows")]
-                                    tx.send(format!("{0}:{1}", path.clone(), stream)).unwrap_or_default();
+                                    tx.send(format!("{0}:{1}", path.clone(), stream))
+                                        .unwrap_or_default();
                                     #[cfg(target_os = "linux")]
                                     tx.send(path.clone()).unwrap_or_default();
                                     return WalkState::Continue;
@@ -148,13 +158,25 @@ impl FileCollecter {
             for path in rule.paths.clone() {
                 let (mut file_path, stream) = parse_stream(&path);
                 if file_path.contains(":") {
-                    file_path = file_path.trim_start_matches(|c: char| c.is_ascii_alphabetic()).trim_start_matches(":").to_string();
+                    file_path = file_path
+                        .trim_start_matches(|c: char| c.is_ascii_alphabetic())
+                        .trim_start_matches(":")
+                        .to_string();
                 }
                 if does_file_exist(drive_letter.clone(), file_path.clone()).unwrap_or(false) {
-                    files.push(format!("{0}:\\{1}:{2}", drive_letter.clone(), file_path, stream));
+                    files.push(format!(
+                        "{0}:\\{1}:{2}",
+                        drive_letter.clone(),
+                        file_path,
+                        stream
+                    ));
                 }
             }
-            for file in &mut FileCollecter::search_filesystem(rule.recursion_depth, format!("{}:\\", drive_letter), rule.paths.clone())? {
+            for file in &mut FileCollecter::search_filesystem(
+                rule.recursion_depth,
+                format!("{}:\\", drive_letter),
+                rule.paths.clone(),
+            )? {
                 files.push(file.clone());
             }
         }

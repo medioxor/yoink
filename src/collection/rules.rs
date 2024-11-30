@@ -143,7 +143,7 @@ pub fn get_rules_from_dir(path: String) -> Result<Vec<CollectionRule>, Box<dyn E
             if let Some(extension) = path.extension() {
                 if extension == "yaml" || extension == "yml" {
                     if let Ok(rule) = CollectionRule::from_yaml_file(
-                        path.to_str().expect("Failed to convert path to string")
+                        path.to_str().expect("Failed to convert path to string"),
                     ) {
                         rules.push(rule);
                     }
